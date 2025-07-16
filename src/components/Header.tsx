@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, ShoppingBag, User, Menu, X } from 'lucide-react';
+import { Search, ShoppingBag, Menu, X } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { AuthButton } from './AuthButton';
 
 export function Header() {
   const { state } = useCart();
@@ -57,9 +58,7 @@ export function Header() {
 
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            <button className="p-2 text-gray-900 hover:text-gray-600 transition-colors">
-              <User className="h-5 w-5" />
-            </button>
+            <AuthButton />
             <button className="p-2 text-gray-900 hover:text-gray-600 transition-colors relative">
               <ShoppingBag className="h-5 w-5" />
               {state.itemCount > 0 && (
@@ -113,9 +112,7 @@ export function Header() {
             </Link>
           </nav>
           <div className="px-4 py-2 border-t border-gray-200 flex items-center space-x-4">
-            <button className="p-2 text-gray-900">
-              <User className="h-5 w-5" />
-            </button>
+            <AuthButton />
             <button className="p-2 text-gray-900 relative">
               <ShoppingBag className="h-5 w-5" />
               {state.itemCount > 0 && (
