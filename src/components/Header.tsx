@@ -3,10 +3,12 @@ import { Link, useLocation } from 'react-router-dom';
 import { Search, ShoppingBag, Menu, X } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { AuthButton } from './AuthButton';
+import { CartSidebar } from './CartSidebar';
 
 export function Header() {
   const { state } = useCart();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
@@ -59,7 +61,10 @@ export function Header() {
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
             <AuthButton />
-            <button className="p-2 text-gray-900 hover:text-gray-600 transition-colors relative">
+            <button 
+              onClick={() => setIsCartOpen(true)}
+              className="p-2 text-gray-900 hover:text-gray-600 transition-colors relative"
+            >
               <ShoppingBag className="h-5 w-5" />
               {state.itemCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-black text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
@@ -113,7 +118,10 @@ export function Header() {
           </nav>
           <div className="px-4 py-2 border-t border-gray-200 flex items-center space-x-4">
             <AuthButton />
-            <button className="p-2 text-gray-900 relative">
+            <button 
+              onClick={() => setIsCartOpen(true)}
+              className="p-2 text-gray-900 relative"
+            >
               <ShoppingBag className="h-5 w-5" />
               {state.itemCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-black text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
@@ -124,6 +132,11 @@ export function Header() {
           </div>
         </div>
       )}
+      
+      <CartSidebar 
+        isOpen={isCartOpen} 
+        onClose={() => setIsCartOpen(false)} 
+      />
     </header>
   );
 }

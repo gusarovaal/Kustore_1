@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Plus, Minus, ShoppingBag } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { CheckoutModal } from './CheckoutModal';
 
 interface CartSidebarProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface CartSidebarProps {
 
 export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const { state, dispatch } = useCart();
+  const [isCheckoutOpen, setIsCheckoutOpen] = React.useState(false);
 
   const updateQuantity = (productId: string, size: string, quantity: number) => {
     if (quantity === 0) {
@@ -110,13 +112,21 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                 <span className="text-lg font-medium text-gray-900">Total:</span>
                 <span className="text-xl font-bold text-gray-900">${state.total.toFixed(2)}</span>
               </div>
-              <button className="w-full bg-black text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors">
-                Checkout
+              <button 
+                onClick={() => setIsCheckoutOpen(true)}
+                className="w-full bg-black text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+              >
+                Оформить заказ
               </button>
             </div>
           )}
         </div>
       </div>
+      
+      <CheckoutModal 
+        isOpen={isCheckoutOpen} 
+        onClose={() => setIsCheckoutOpen(false)} 
+      />
     </>
   );
 }

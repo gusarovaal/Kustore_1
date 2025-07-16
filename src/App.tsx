@@ -8,6 +8,7 @@ import { HomePage } from './pages/HomePage';
 import { NewPage } from './pages/NewPage';
 import { SalePage } from './pages/SalePage';
 import { AllProductsPage } from './pages/AllProductsPage';
+import { AdminPage } from './pages/AdminPage';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
               <Route path="/new" element={<NewPage />} />
               <Route path="/sale" element={<SalePage />} />
               <Route path="/all" element={<AllProductsPage />} />
+              <Route path="/admin" element={<AdminPage />} />
             </Routes>
           </div>
         </Router>

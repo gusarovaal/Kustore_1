@@ -27,6 +27,33 @@ export interface CartItem {
   size: string;
 }
 
+export interface OrderItem {
+  product_id: string;
+  product_name: string;
+  product_image: string;
+  size: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface Order {
+  id: string;
+  user_id: number;
+  items: OrderItem[];
+  total_amount: number;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  delivery_address: string;
+  delivery_method: 'boxberry' | 'russian_post' | 'cdek';
+  payment_method: 'bank_transfer';
+  status: 'new' | 'confirmed' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
+  admin_notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface User {
   name: string;
   email: string;
