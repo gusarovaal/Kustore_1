@@ -178,28 +178,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         console.log('Using mock user:', mockUser);
         
-        // Создаем пользователя в базе данных
-        const { data: newUser, error: insertError } = await supabase
+        // Проверяем, существует ли пользователь
+        let { data: existingUser, error: fetchError } = await supabase
           .from('users')
-          .insert({
-            id: mockUser.id,
-            telegram_id: mockUser.id,
-            first_name: mockUser.first_name,
-            last_name: mockUser.last_name,
-            username: mockUser.username,
-            last_login: new Date().toISOString(),
-          })
-          .select()
+          .select('*')
+          .eq('telegram_id', mockUser.id)
           .single();
 
-        if (insertError) {
-          console.error('Error creating mock user:', insertError);
-          throw insertError;
+        let user;
+        if (existingUser) {
+          // Обновляем существующего пользователя
+          const { data: updatedUser, error: updateError } = await supabase
+            .from('users')
+            .update({ 
+              last_login: new Date().toISOString(),
+              first_name: mockUser.first_name,
+              last_name: mockUser.last_name,
+              username: mockUser.username,
+            })
+            .eq('telegram_id', mockUser.id)
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error('Error updating user:', updateError);
+            throw updateError;
+          }
+          user = updatedUser;
+        } else {
+          // Создаем нового пользователя
+          const { data: newUser, error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: mockUser.id,
+              telegram_id: mockUser.id,
+              first_name: mockUser.first_name,
+              last_name: mockUser.last_name,
+              username: mockUser.username,
+              last_login: new Date().toISOString(),
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('Error creating user:', insertError);
+            throw insertError;
+          }
+          user = newUser;
         }
         
         dispatch({ 
-          type: 'SET_USER', 
-          payload: { user: newUser, telegramUser: mockUser } 
+          type: 'SET_USER',
+          payload: { user, telegramUser: mockUser }
         });
         return;
       }
