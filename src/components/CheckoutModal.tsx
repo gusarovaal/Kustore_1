@@ -124,11 +124,12 @@ ${items.map(item => `• ${item.product_name} (${item.size}) x${item.quantity} =
 ⏰ ${new Date().toLocaleString('ru-RU')}
       `;
 
-      // Отправляем через edge function (если настроена) или webhook
-      const response = await fetch('/api/send-telegram-notification', {
+      // Отправляем через Supabase Edge Function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-telegram-notification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
           message,
@@ -137,7 +138,10 @@ ${items.map(item => `• ${item.product_name} (${item.size}) x${item.quantity} =
       });
 
       if (!response.ok) {
-        console.warn('Не удалось отправить уведомление в Telegram');
+        const errorText = await response.text();
+        console.warn('Не удалось отправить уведомление в Telegram:', errorText);
+      } else {
+        console.log('Уведомление в Telegram отправлено успешно');
       }
     } catch (error) {
       console.error('Ошибка отправки уведомления:', error);

@@ -18,7 +18,14 @@ serve(async (req) => {
     const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
     const TELEGRAM_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID')
     
+    console.log('Environment check:', {
+      hasToken: !!TELEGRAM_BOT_TOKEN,
+      hasChat: !!TELEGRAM_CHAT_ID,
+      orderId
+    })
+    
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      console.error('Missing Telegram credentials')
       throw new Error('Telegram credentials not configured')
     }
 
@@ -40,10 +47,12 @@ serve(async (req) => {
 
     if (!telegramResponse.ok) {
       const error = await telegramResponse.text()
+      console.error('Telegram API error:', error)
       throw new Error(`Telegram API error: ${error}`)
     }
 
     const result = await telegramResponse.json()
+    console.log('Message sent successfully:', result.message_id)
     
     return new Response(
       JSON.stringify({ success: true, messageId: result.message_id }),
