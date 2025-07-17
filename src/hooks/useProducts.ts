@@ -1,26 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types';
+import { FilterState } from '../components/FilterModal';
 
 interface UseProductsReturn {
   products: Product[];
   loading: boolean;
   error: string | null;
-  applyFilters: (filters: {
-    category?: string;
-    priceRange?: [number, number];
-    color?: string;
-    brand?: string;
-    sizes?: string[];
-    inStock?: boolean;
-  }) => void;
+  applyFilters: (products: Product[], filters: FilterState) => Product[];
   getNewProducts: () => Product[];
   getSaleProducts: () => Product[];
 }
 
 export function useProducts(): UseProductsReturn {
   const [products, setProducts] = useState<Product[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +24,8 @@ export function useProducts(): UseProductsReturn {
         setLoading(true);
         setError(null);
 
+        console.log('Fetching products from Supabase...');
+
         const { data, error: fetchError } = await supabase
           .from('products')
           .select('*')
@@ -38,10 +33,11 @@ export function useProducts(): UseProductsReturn {
           .order('created_at', { ascending: false });
 
         if (fetchError) {
+          console.error('Supabase error:', fetchError);
           throw fetchError;
         }
 
-        setAllProducts(data || []);
+        console.log('Products fetched successfully:', data?.length || 0);
         setProducts(data || []);
       } catch (err) {
         console.error('Error fetching products:', err);
@@ -55,22 +51,8 @@ export function useProducts(): UseProductsReturn {
   }, []);
 
   // Apply filters to products
-  const applyFilters = (filters: {
-    category?: string;
-    priceRange?: [number, number];
-    color?: string;
-    brand?: string;
-    sizes?: string[];
-    inStock?: boolean;
-  }) => {
-    let filteredProducts = [...allProducts];
-
-    // Filter by category
-    if (filters.category && filters.category !== 'all') {
-      filteredProducts = filteredProducts.filter(
-        product => product.category === filters.category
-      );
-    }
+  const applyFilters = (productsToFilter: Product[], filters: FilterState): Product[] => {
+    let filteredProducts = [...productsToFilter];
 
     // Filter by price range
     if (filters.priceRange) {
@@ -81,45 +63,66 @@ export function useProducts(): UseProductsReturn {
       });
     }
 
-    // Filter by color
-    if (filters.color && filters.color !== 'all') {
-      filteredProducts = filteredProducts.filter(
-        product => product.color?.toLowerCase() === filters.color?.toLowerCase()
-      );
-    }
-
-    // Filter by brand
-    if (filters.brand && filters.brand !== 'all') {
-      filteredProducts = filteredProducts.filter(
-        product => product.brand?.toLowerCase() === filters.brand?.toLowerCase()
+    // Filter by categories
+    if (filters.categories && filters.categories.length > 0) {
+      filteredProducts = filteredProducts.filter(product =>
+        filters.categories.includes(product.category)
       );
     }
 
     // Filter by sizes
     if (filters.sizes && filters.sizes.length > 0) {
       filteredProducts = filteredProducts.filter(product =>
-        product.sizes?.some(size => filters.sizes?.includes(size))
+        product.sizes?.some(size => filters.sizes.includes(size))
+      );
+    }
+
+    // Filter by colors
+    if (filters.colors && filters.colors.length > 0) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.color && filters.colors.includes(product.color)
+      );
+    }
+
+    // Filter by brands
+    if (filters.brands && filters.brands.length > 0) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.brand && filters.brands.includes(product.brand)
+      );
+    }
+
+    // Filter by new status
+    if (filters.isNew !== null) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.is_new === filters.isNew
+      );
+    }
+
+    // Filter by sale status
+    if (filters.isOnSale !== null) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.is_on_sale === filters.isOnSale
       );
     }
 
     // Filter by stock status
-    if (filters.inStock !== undefined) {
-      filteredProducts = filteredProducts.filter(
-        product => product.in_stock === filters.inStock
+    if (!filters.inStock) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.in_stock === filters.inStock
       );
     }
 
-    setProducts(filteredProducts);
+    return filteredProducts;
   };
 
   // Get new products
   const getNewProducts = (): Product[] => {
-    return allProducts.filter(product => product.is_new);
+    return products.filter(product => product.is_new);
   };
 
   // Get sale products
   const getSaleProducts = (): Product[] => {
-    return allProducts.filter(product => product.is_on_sale && product.sale_price);
+    return products.filter(product => product.is_on_sale && product.sale_price);
   };
 
   return {
