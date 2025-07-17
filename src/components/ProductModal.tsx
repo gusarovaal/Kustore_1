@@ -1,352 +1,825 @@
-import React, { useState } from 'react';
-import { X, Plus, Minus, ChevronLeft, ChevronRight, Ruler } from 'lucide-react';
-import { Product } from '../types';
-import { useCart } from '../context/CartContext';
+require('dotenv').config();
 
-interface ProductModalProps {
-  product: Product | null;
-  onClose: () => void;
+const TelegramBot = require('node-telegram-bot-api');
+const { createClient } = require('@supabase/supabase-js');
+
+// Конфигурация
+const BOT_TOKEN = process.env.TELEGRAM_ADMIN_BOT_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
+
+// Инициализация
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// Хранилище состояний пользователей
+const userStates = new Map();
+
+// Состояния для добавления товара
+const ADD_PRODUCT_STATES = {
+  WAITING_NAME: 'waiting_name',
+  WAITING_PRICE: 'waiting_price',
+  WAITING_SALE_PRICE: 'waiting_sale_price',
+  WAITING_CATEGORY: 'waiting_category',
+  WAITING_SUBCATEGORY: 'waiting_subcategory',
+  WAITING_COLOR: 'waiting_color',
+  WAITING_BRAND: 'waiting_brand',
+  WAITING_DESCRIPTION: 'waiting_description',
+  WAITING_SIZES: 'waiting_sizes',
+  WAITING_STOCK: 'waiting_stock',
+  WAITING_MEASUREMENTS: 'waiting_measurements',
+  WAITING_IMAGES: 'waiting_images',
+  WAITING_IS_NEW: 'waiting_is_new',
+  WAITING_IS_ON_SALE: 'waiting_is_on_sale',
+  CONFIRM: 'confirm'
+};
+
+// Состояния для редактирования товара
+const EDIT_PRODUCT_STATES = {
+  WAITING_PRODUCT_ID: 'waiting_product_id',
+  WAITING_FIELD: 'waiting_field',
+  WAITING_VALUE: 'waiting_value'
+};
+
+// Категории товаров
+const CATEGORIES = [
+  'shirts', 'jeans', 'dresses', 'sweaters', 
+  'jackets', 'skirts', 'bags', 'shoes', 'accessories'
+];
+
+// Размеры по категориям
+const SIZES_BY_CATEGORY = {
+  'shirts': ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  'jeans': ['26', '27', '28', '29', '30', '31', '32', '33', '34', '36', '38'],
+  'dresses': ['XS', 'S', 'M', 'L', 'XL'],
+  'sweaters': ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  'jackets': ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  'skirts': ['XS', 'S', 'M', 'L', 'XL'],
+  'bags': ['One Size'],
+  'shoes': ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44'],
+  'accessories': ['One Size']
+};
+
+// Проверка администратора
+function isAdmin(chatId) {
+  return chatId.toString() === ADMIN_CHAT_ID;
 }
 
-export function ProductModal({ product, onClose }: ProductModalProps) {
-  const { dispatch, state } = useCart();
-  const [selectedSize, setSelectedSize] = useState<string>('');
-  const [quantity, setQuantity] = useState(1);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [showMeasurements, setShowMeasurements] = useState(false);
-
-  if (!product) return null;
-
-  const images = product.images || [product.image_url];
-  const altTexts = product.image_alt_texts || [product.name];
-
-  const handleAddToCart = () => {
-    if (!selectedSize) return;
-    
-    for (let i = 0; i < quantity; i++) {
-      dispatch({ type: 'ADD_ITEM', payload: { product, size: selectedSize } });
+// Главное меню
+function getMainMenu() {
+  return {
+    reply_markup: {
+      keyboard: [
+        ['➕ Добавить товар', '✏️ Редактировать товар'],
+        ['👁️ Скрыть товар', '📋 Список товаров'],
+        ['📊 Статистика', '❌ Отмена']
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: false
     }
-    onClose();
   };
+}
 
-  const nextImage = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % images.length);
-  };
-
-  const prevImage = () => {
-    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
-  };
-
-  const goToImage = (index: number) => {
-    setCurrentImageIndex(index);
-  };
-
-  const getMeasurements = (size: string) => {
-    if (!product.measurements || !product.measurements[size]) {
-      return {};
+// Меню категорий
+function getCategoryMenu() {
+  const keyboard = [];
+  for (let i = 0; i < CATEGORIES.length; i += 2) {
+    const row = [CATEGORIES[i]];
+    if (CATEGORIES[i + 1]) row.push(CATEGORIES[i + 1]);
+    keyboard.push(row);
+  }
+  keyboard.push(['❌ Отмена']);
+  
+  return {
+    reply_markup: {
+      keyboard,
+      resize_keyboard: true,
+      one_time_keyboard: true
     }
-    return product.measurements[size];
   };
+}
 
-  const getStockQuantity = (size: string) => {
-    if (!product.stock_quantity || !product.stock_quantity[size]) {
-      return 0;
+// Меню размеров для категории
+function getSizesMenu(category) {
+  const sizes = SIZES_BY_CATEGORY[category] || ['XS', 'S', 'M', 'L', 'XL'];
+  const keyboard = [];
+  
+  for (let i = 0; i < sizes.length; i += 3) {
+    const row = sizes.slice(i, i + 3);
+    keyboard.push(row);
+  }
+  keyboard.push(['✅ Готово', '❌ Отмена']);
+  
+  return {
+    reply_markup: {
+      keyboard,
+      resize_keyboard: true,
+      one_time_keyboard: false
     }
-    return product.stock_quantity[size];
   };
+}
 
-  const getCartQuantityForSize = (size: string) => {
-    const cartItem = state.items.find(
-      item => item.product.id === product.id && item.size === size
-    );
-    return cartItem ? cartItem.quantity : 0;
+// Меню да/нет
+function getYesNoMenu() {
+  return {
+    reply_markup: {
+      keyboard: [
+        ['✅ Да', '❌ Нет']
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
   };
+}
 
-  const getAvailableQuantity = (size: string) => {
-    const stockQty = getStockQuantity(size);
-    const cartQty = getCartQuantityForSize(size);
-    return Math.max(0, stockQty - cartQty);
-  };
+// Команда /start
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  
+  if (!isAdmin(chatId)) {
+    bot.sendMessage(chatId, '❌ У вас нет доступа к этому боту.');
+    return;
+  }
+  
+  bot.sendMessage(chatId, 
+    '🛍️ *Добро пожаловать в панель управления KUSTORE!*\n\n' +
+    'Выберите действие:', 
+    { ...getMainMenu(), parse_mode: 'Markdown' }
+  );
+});
 
-  const maxQuantityForSelectedSize = selectedSize ? getAvailableQuantity(selectedSize) : 0;
+// Обработка сообщений
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  
+  if (!isAdmin(chatId)) return;
+  
+  const userState = userStates.get(chatId) || {};
+  
+  try {
+    // Главное меню
+    if (text === '➕ Добавить товар') {
+      await startAddProduct(chatId);
+    } else if (text === '✏️ Редактировать товар') {
+      await startEditProduct(chatId);
+    } else if (text === '👁️ Скрыть товар') {
+      await startHideProduct(chatId);
+    } else if (text === '📋 Список товаров') {
+      await showProductsList(chatId);
+    } else if (text === '📊 Статистика') {
+      await showStatistics(chatId);
+    } else if (text === '❌ Отмена') {
+      userStates.delete(chatId);
+      bot.sendMessage(chatId, '✅ Операция отменена.', getMainMenu());
+    }
+    // Обработка состояний добавления товара
+    else if (userState.action === 'add_product') {
+      await handleAddProductState(chatId, text, userState);
+    }
+    // Обработка состояний редактирования товара
+    else if (userState.action === 'edit_product') {
+      await handleEditProductState(chatId, text, userState);
+    }
+    // Обработка скрытия товара
+    else if (userState.action === 'hide_product') {
+      await handleHideProductState(chatId, text, userState);
+    }
+  } catch (error) {
+    console.error('Error handling message:', error);
+    bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте еще раз.');
+    userStates.delete(chatId);
+  }
+});
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-900">Product Details</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-
-        <div className="p-6">
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Product Images Gallery */}
-            <div className="space-y-4">
-              {/* Main Image */}
-              <div className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden group">
-                <img
-                  src={images[currentImageIndex]}
-                  alt={altTexts[currentImageIndex] || product.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // Fallback to placeholder if image fails to load
-                    const target = e.target as HTMLImageElement;
-                    target.src = '/images/products/placeholder.jpg';
-                  }}
-                />
-                
-                {/* Navigation Arrows */}
-                {images.length > 1 && (
-                  <>
-                    <button
-                      onClick={prevImage}
-                      className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full p-2 shadow-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <button
-                      onClick={nextImage}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full p-2 shadow-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </button>
-                  </>
-                )}
-
-                {/* Image Counter */}
-                {images.length > 1 && (
-                  <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm">
-                    {currentImageIndex + 1} / {images.length}
-                  </div>
-                )}
-              </div>
-
-              {/* Thumbnail Gallery */}
-              {images.length > 1 && (
-                <div className="grid grid-cols-4 gap-2">
-                  {images.slice(0, 8).map((image, index) => (
-                    <button
-                      key={index}
-                      onClick={() => goToImage(index)}
-                      className={`aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 transition-all ${
-                        currentImageIndex === index
-                          ? 'border-black'
-                          : 'border-transparent hover:border-gray-300'
-                      }`}
-                    >
-                      <img
-                        src={image}
-                        alt={altTexts[index] || `${product.name} - Image ${index + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // Fallback to placeholder if image fails to load
-                          const target = e.target as HTMLImageElement;
-                          target.src = '/images/products/placeholder.jpg';
-                        }}
-                      />
-                    </button>
-                  ))}
-                  {images.length > 8 && (
-                    <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-gray-500 text-sm">
-                      +{images.length - 8}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Product Info */}
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
-                <div className="flex items-center space-x-3">
-                  {product.is_on_sale && product.sale_price ? (
-                    <>
-                      <span className="text-2xl font-semibold text-red-600">Руб. {product.sale_price}</span>
-                      <span className="text-xl text-gray-400 line-through">Руб. {product.price}</span>
-                      <span className="bg-red-600 text-white text-sm px-2 py-1 rounded">SALE</span>
-                    </>
-                  ) : (
-                    <span className="text-2xl font-semibold text-gray-900">Руб. {product.price}</span>
-                  )}
-                  {product.is_new && (
-                    <span className="bg-black text-white text-sm px-2 py-1 rounded">NEW</span>
-                  )}
-                </div>
-              </div>
-
-              <p className="text-gray-600">{product.description}</p>
-
-              {/* Size Selection */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Size</h3>
-                <div className="flex flex-wrap gap-2 mb-8">
-                  {product.sizes.map((size) => (
-                    <div key={size} className="relative flex flex-col items-center">
-                      <button
-                        onClick={() => {
-                          setSelectedSize(size);
-                          setShowMeasurements(true);
-                          setQuantity(1); // Reset quantity when size changes
-                        }}
-                        disabled={getStockQuantity(size) === 0}
-                        className={`px-4 py-2 border rounded-lg transition-colors relative ${
-                          selectedSize === size
-                            ? 'bg-black text-white border-black'
-                            : getStockQuantity(size) === 0
-                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                            : 'bg-white text-gray-900 border-gray-300 hover:border-black'
-                        }`}
-                      >
-                        {size}
-                        {getStockQuantity(size) === 0 && (
-                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                            ×
-                          </span>
-                        )}
-                      </button>
-                      {getStockQuantity(size) > 0 && getStockQuantity(size) <= 2 && (
-                        <div className="mt-1 text-xs text-orange-600 whitespace-nowrap text-center">
-                          Осталось: {getAvailableQuantity(size)} шт.
-                        </div>
-                      )}
-                      {getStockQuantity(size) === 0 && (
-                        <div className="mt-1 text-xs text-red-600 whitespace-nowrap text-center">
-                          Нет в наличии
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Size Measurements */}
-                {selectedSize && showMeasurements && (
-                  <>
-                    {Object.keys(getMeasurements(selectedSize)).length > 0 ? (
-                      <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-2">
-                            <Ruler className="h-4 w-4 text-gray-600" />
-                            <h4 className="text-sm font-medium text-gray-900">
-                              Замеры для размера {selectedSize}
-                            </h4>
-                          </div>
-                          <button
-                            onClick={() => setShowMeasurements(false)}
-                            className="text-gray-400 hover:text-gray-600 transition-colors"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          {Object.entries(getMeasurements(selectedSize)).map(([measurement, value]) => (
-                            <div key={measurement} className="flex justify-between">
-                              <span className="text-gray-600">{measurement}:</span>
-                              <span className="font-medium text-gray-900">{value}</span>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <p className="text-xs text-gray-500">
-                            * Замеры могут незначительно отличаться в зависимости от модели
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <div className="flex items-center space-x-2">
-                          <Ruler className="h-4 w-4 text-yellow-600" />
-                          <p className="text-sm text-yellow-800">
-                            Замеры для размера {selectedSize} пока не добавлены
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Quantity Selection */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Quantity</h3>
-                {selectedSize && maxQuantityForSelectedSize === 0 && (
-                  <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-800">
-                      Товар размера {selectedSize} закончился на складе или уже добавлен в корзину в максимальном количестве
-                    </p>
-                  </div>
-                )}
-                <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    disabled={quantity <= 1}
-                    className={`p-2 border rounded-lg transition-colors ${
-                      quantity <= 1
-                        ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'border-gray-300 hover:border-black'
-                    }`}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="text-lg font-medium min-w-[3rem] text-center">{quantity}</span>
-                  <button
-                    onClick={() => setQuantity(quantity + 1)}
-                    disabled={!selectedSize || quantity >= maxQuantityForSelectedSize}
-                    className={`p-2 border rounded-lg transition-colors ${
-                      !selectedSize || quantity >= maxQuantityForSelectedSize
-                        ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'border-gray-300 hover:border-black'
-                    }`}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-                {selectedSize && maxQuantityForSelectedSize > 0 && (
-                  <p className="text-sm text-gray-600 mt-2">
-                    Доступно для добавления: {maxQuantityForSelectedSize} шт.
-                  </p>
-                )}
-              </div>
-
-              {/* Add to Cart Button */}
-              <button
-                onClick={handleAddToCart}
-                disabled={!selectedSize || maxQuantityForSelectedSize === 0}
-                className={`w-full py-3 rounded-lg font-medium transition-colors ${
-                  selectedSize && maxQuantityForSelectedSize > 0
-                    ? 'bg-black text-white hover:bg-gray-800'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {!selectedSize 
-                  ? 'Select Size' 
-                  : maxQuantityForSelectedSize === 0 
-                  ? 'Out of Stock' 
-                  : 'Add to Cart'
-                }
-              </button>
-
-              {/* Product Features */}
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Product Features</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• Premium quality materials</li>
-                  <li>• Comfortable fit</li>
-                  <li>• Easy care instructions</li>
-                  <li>• Sustainable production</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+// Начать добавление товара
+async function startAddProduct(chatId) {
+  userStates.set(chatId, {
+    action: 'add_product',
+    state: ADD_PRODUCT_STATES.WAITING_NAME,
+    product: {}
+  });
+  
+  bot.sendMessage(chatId, 
+    '➕ *Добавление нового товара*\n\n' +
+    '📝 Введите название товара:', 
+    { parse_mode: 'Markdown' }
   );
 }
+
+// Обработка состояний добавления товара
+async function handleAddProductState(chatId, text, userState) {
+  const { state, product } = userState;
+  
+  switch (state) {
+    case ADD_PRODUCT_STATES.WAITING_NAME:
+      product.name = text;
+      userState.state = ADD_PRODUCT_STATES.WAITING_PRICE;
+      bot.sendMessage(chatId, '💰 Введите цену товара (в рублях):');
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_PRICE:
+      const price = parseFloat(text);
+      if (isNaN(price) || price <= 0) {
+        bot.sendMessage(chatId, '❌ Введите корректную цену (число больше 0):');
+        return;
+      }
+      product.price = price;
+      userState.state = ADD_PRODUCT_STATES.WAITING_SALE_PRICE;
+      bot.sendMessage(chatId, 
+        '🏷️ Введите цену со скидкой (или "нет" если скидки нет):'
+      );
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_SALE_PRICE:
+      if (text.toLowerCase() !== 'нет') {
+        const salePrice = parseFloat(text);
+        if (isNaN(salePrice) || salePrice <= 0) {
+          bot.sendMessage(chatId, '❌ Введите корректную цену со скидкой или "нет":');
+          return;
+        }
+        product.sale_price = salePrice;
+      }
+      userState.state = ADD_PRODUCT_STATES.WAITING_CATEGORY;
+      bot.sendMessage(chatId, '📂 Выберите категорию товара:', getCategoryMenu());
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_CATEGORY:
+      if (!CATEGORIES.includes(text)) {
+        bot.sendMessage(chatId, '❌ Выберите категорию из предложенных:', getCategoryMenu());
+        return;
+      }
+      product.category = text;
+      userState.state = ADD_PRODUCT_STATES.WAITING_SUBCATEGORY;
+      bot.sendMessage(chatId, 
+        '📁 Введите подкategорию (или "нет" если не нужна):'
+      );
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_SUBCATEGORY:
+      if (text.toLowerCase() !== 'нет') {
+        product.subcategory = text;
+      }
+      userState.state = ADD_PRODUCT_STATES.WAITING_COLOR;
+      bot.sendMessage(chatId, '🎨 Введите цвет товара (или "нет"):');
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_COLOR:
+      if (text.toLowerCase() !== 'нет') {
+        product.color = text;
+      }
+      userState.state = ADD_PRODUCT_STATES.WAITING_BRAND;
+      bot.sendMessage(chatId, '🏷️ Введите бренд (по умолчанию "KUSTORE"):');
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_BRAND:
+      product.brand = text === 'нет' ? 'KUSTORE' : text;
+      userState.state = ADD_PRODUCT_STATES.WAITING_DESCRIPTION;
+      bot.sendMessage(chatId, '📝 Введите описание товара:');
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_DESCRIPTION:
+      product.description = text;
+      userState.state = ADD_PRODUCT_STATES.WAITING_SIZES;
+      userState.selectedSizes = [];
+      bot.sendMessage(chatId, 
+        '📏 Выберите размеры (нажимайте на размеры, затем "Готово"):', 
+        getSizesMenu(product.category)
+      );
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_SIZES:
+      if (text === '✅ Готово') {
+        if (userState.selectedSizes.length === 0) {
+          bot.sendMessage(chatId, '❌ Выберите хотя бы один размер!');
+          return;
+        }
+        product.sizes = userState.selectedSizes;
+        userState.state = ADD_PRODUCT_STATES.WAITING_STOCK;
+        userState.stockIndex = 0;
+        bot.sendMessage(chatId, 
+          `📦 Введите количество на складе для размера ${product.sizes[0]}:`
+        );
+      } else if (SIZES_BY_CATEGORY[product.category]?.includes(text)) {
+        if (!userState.selectedSizes.includes(text)) {
+          userState.selectedSizes.push(text);
+          bot.sendMessage(chatId, `✅ Размер ${text} добавлен. Выбрано: ${userState.selectedSizes.join(', ')}`);
+        }
+      }
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_STOCK:
+      const stock = parseInt(text);
+      if (isNaN(stock) || stock < 0) {
+        bot.sendMessage(chatId, '❌ Введите корректное количество (число >= 0):');
+        return;
+      }
+      
+      if (!product.stock_quantity) product.stock_quantity = {};
+      product.stock_quantity[product.sizes[userState.stockIndex]] = stock;
+      
+      userState.stockIndex++;
+      if (userState.stockIndex < product.sizes.length) {
+        bot.sendMessage(chatId, 
+          `📦 Введите количество на складе для размера ${product.sizes[userState.stockIndex]}:`
+        );
+      } else {
+        userState.state = ADD_PRODUCT_STATES.WAITING_IMAGES;
+        bot.sendMessage(chatId, 
+          '🖼️ Введите пути к изображениям через запятую\n' +
+          'Пример: /images/products/shirts/shirt1.jpg, /images/products/shirts/shirt2.jpg'
+        );
+      }
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_IMAGES:
+      const imagePaths = text.split(',').map(path => path.trim());
+      product.images = imagePaths;
+      product.image_url = imagePaths[0]; // Первое изображение как основное
+      product.image_alt_texts = imagePaths.map(() => product.name);
+      
+      userState.state = ADD_PRODUCT_STATES.WAITING_IS_NEW;
+      bot.sendMessage(chatId, '🆕 Это новинка?', getYesNoMenu());
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_IS_NEW:
+      product.is_new = text === '✅ Да';
+      userState.state = ADD_PRODUCT_STATES.WAITING_IS_ON_SALE;
+      bot.sendMessage(chatId, '🏷️ Товар участвует в распродаже?', getYesNoMenu());
+      break;
+      
+    case ADD_PRODUCT_STATES.WAITING_IS_ON_SALE:
+      product.is_on_sale = text === '✅ Да';
+      product.in_stock = true; // По умолчанию в наличии
+      
+      userState.state = ADD_PRODUCT_STATES.CONFIRM;
+      await showProductPreview(chatId, product);
+      break;
+      
+    case ADD_PRODUCT_STATES.CONFIRM:
+      if (text === '✅ Сохранить') {
+        await saveProduct(chatId, product);
+      } else if (text === '❌ Отменить') {
+        userStates.delete(chatId);
+        bot.sendMessage(chatId, '❌ Добавление товара отменено.', getMainMenu());
+      } else {
+        bot.sendMessage(chatId, '❌ Выберите "Сохранить" или "Отменить".');
+      }
+      break;
+  }
+  
+  userStates.set(chatId, userState);
+}
+
+// Показать превью товара
+async function showProductPreview(chatId, product) {
+  const preview = `
+🛍️ *Превью товара:*
+
+📝 *Название:* ${product.name}
+💰 *Цена:* ${product.price} руб.
+${product.sale_price ? `🏷️ *Цена со скидкой:* ${product.sale_price} руб.\n` : ''}
+📂 *Категория:* ${product.category}
+${product.subcategory ? `📁 *Подкатегория:* ${product.subcategory}\n` : ''}
+${product.color ? `🎨 *Цвет:* ${product.color}\n` : ''}
+🏷️ *Бренд:* ${product.brand}
+📝 *Описание:* ${product.description}
+📏 *Размеры:* ${product.sizes.join(', ')}
+📦 *Остатки:* ${Object.entries(product.stock_quantity).map(([size, qty]) => `${size}: ${qty}`).join(', ')}
+🖼️ *Изображения:* ${product.images.length} шт.
+🆕 *Новинка:* ${product.is_new ? 'Да' : 'Нет'}
+🏷️ *Распродажа:* ${product.is_on_sale ? 'Да' : 'Нет'}
+  `;
+  
+  bot.sendMessage(chatId, preview, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      keyboard: [
+        ['✅ Сохранить', '❌ Отменить']
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
+  });
+}
+
+// Сохранить товар в базу данных
+async function saveProduct(chatId, product) {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .insert([product])
+      .select();
+    
+    if (error) throw error;
+    
+    userStates.delete(chatId);
+    bot.sendMessage(chatId, 
+      `✅ *Товар успешно добавлен!*\n\n` +
+      `🆔 ID: ${data[0].id}\n` +
+      `📝 Название: ${product.name}`, 
+      { ...getMainMenu(), parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error('Error saving product:', error);
+    bot.sendMessage(chatId, 
+      `❌ Ошибка при сохранении товара: ${error.message}\n\n` +
+      'Попробуйте еще раз.'
+    );
+  }
+}
+
+// Начать редактирование товара
+async function startEditProduct(chatId) {
+  userStates.set(chatId, {
+    action: 'edit_product',
+    state: EDIT_PRODUCT_STATES.WAITING_PRODUCT_ID
+  });
+  
+  bot.sendMessage(chatId, 
+    '✏️ *Редактирование товара*\n\n' +
+    '🆔 Введите ID товара или часть названия для поиска:', 
+    { parse_mode: 'Markdown' }
+  );
+}
+
+// Обработка редактирования товара
+async function handleEditProductState(chatId, text, userState) {
+  const { state } = userState;
+  
+  switch (state) {
+    case EDIT_PRODUCT_STATES.WAITING_PRODUCT_ID:
+      await findAndSelectProduct(chatId, text, userState);
+      break;
+      
+    case EDIT_PRODUCT_STATES.WAITING_FIELD:
+      await selectFieldToEdit(chatId, text, userState);
+      break;
+      
+    case EDIT_PRODUCT_STATES.WAITING_VALUE:
+      await updateProductField(chatId, text, userState);
+      break;
+  }
+}
+
+// Найти и выбрать товар для редактирования
+async function findAndSelectProduct(chatId, searchTerm, userState) {
+  try {
+    let query = supabase.from('products').select('*');
+    
+    // Если это UUID, ищем по ID
+    if (searchTerm.length === 36 && searchTerm.includes('-')) {
+      query = query.eq('id', searchTerm);
+    } else {
+      // Иначе ищем по названию
+      query = query.ilike('name', `%${searchTerm}%`);
+    }
+    
+    const { data, error } = await query.limit(10);
+    
+    if (error) throw error;
+    
+    if (data.length === 0) {
+      bot.sendMessage(chatId, '❌ Товары не найдены. Попробуйте другой запрос:');
+      return;
+    }
+    
+    if (data.length === 1) {
+      userState.product = data[0];
+      userState.state = EDIT_PRODUCT_STATES.WAITING_FIELD;
+      await showEditMenu(chatId, data[0]);
+    } else {
+      // Показать список найденных товаров
+      let message = '📋 *Найденные товары:*\n\n';
+      data.forEach((product, index) => {
+        message += `${index + 1}. ${product.name} (${product.price} руб.)\n`;
+        message += `   ID: \`${product.id}\`\n\n`;
+      });
+      message += 'Введите точный ID товара для редактирования:';
+      
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    }
+    
+    userStates.set(chatId, userState);
+  } catch (error) {
+    console.error('Error finding product:', error);
+    bot.sendMessage(chatId, '❌ Ошибка поиска товара. Попробуйте еще раз.');
+  }
+}
+
+// Показать меню редактирования
+async function showEditMenu(chatId, product) {
+  const message = `
+✏️ *Редактирование товара:*
+📝 ${product.name}
+
+Выберите поле для редактирования:
+  `;
+  
+  bot.sendMessage(chatId, message, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      keyboard: [
+        ['📝 Название', '💰 Цена'],
+        ['🏷️ Цена со скидкой', '📂 Категория'],
+        ['🎨 Цвет', '📝 Описание'],
+        ['📏 Размеры', '📦 Остатки'],
+        ['🆕 Новинка', '🏷️ Распродажа'],
+        ['👁️ Скрыть/Показать', '❌ Отмена']
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
+  });
+}
+
+// Выбрать поле для редактирования
+async function selectFieldToEdit(chatId, fieldName, userState) {
+  const fieldMap = {
+    '📝 Название': 'name',
+    '💰 Цена': 'price',
+    '🏷️ Цена со скидкой': 'sale_price',
+    '📂 Категория': 'category',
+    '🎨 Цвет': 'color',
+    '📝 Описание': 'description',
+    '📏 Размеры': 'sizes',
+    '📦 Остатки': 'stock_quantity',
+    '🆕 Новинка': 'is_new',
+    '🏷️ Распродажа': 'is_on_sale',
+    '👁️ Скрыть/Показать': 'in_stock'
+  };
+  
+  const field = fieldMap[fieldName];
+  if (!field) {
+    bot.sendMessage(chatId, '❌ Выберите поле из предложенных.');
+    return;
+  }
+  
+  userState.editField = field;
+  userState.state = EDIT_PRODUCT_STATES.WAITING_VALUE;
+  
+  let prompt = '';
+  const currentValue = userState.product[field];
+  
+  switch (field) {
+    case 'name':
+      prompt = `📝 Текущее название: ${currentValue}\nВведите новое название:`;
+      break;
+    case 'price':
+      prompt = `💰 Текущая цена: ${currentValue} руб.\nВведите новую цену:`;
+      break;
+    case 'sale_price':
+      prompt = `🏷️ Текущая цена со скидкой: ${currentValue || 'не установлена'}\nВведите новую цену со скидкой (или "удалить"):`;
+      break;
+    case 'category':
+      prompt = `📂 Текущая категория: ${currentValue}\nВыберите новую категорию:`;
+      bot.sendMessage(chatId, prompt, getCategoryMenu());
+      return;
+    case 'color':
+      prompt = `🎨 Текущий цвет: ${currentValue || 'не указан'}\nВведите новый цвет:`;
+      break;
+    case 'description':
+      prompt = `📝 Текущее описание: ${currentValue}\nВведите новое описание:`;
+      break;
+    case 'is_new':
+    case 'is_on_sale':
+    case 'in_stock':
+      const labels = {
+        'is_new': 'новинка',
+        'is_on_sale': 'участие в распродаже',
+        'in_stock': 'наличие на складе'
+      };
+      prompt = `Текущее значение (${labels[field]}): ${currentValue ? 'Да' : 'Нет'}\nИзменить на:`;
+      bot.sendMessage(chatId, prompt, getYesNoMenu());
+      return;
+    default:
+      prompt = `Введите новое значение для поля ${fieldName}:`;
+  }
+  
+  bot.sendMessage(chatId, prompt);
+  userStates.set(chatId, userState);
+}
+
+// Обновить поле товара
+async function updateProductField(chatId, newValue, userState) {
+  try {
+    const { product, editField } = userState;
+    let processedValue = newValue;
+    
+    // Обработка значений по типу поля
+    switch (editField) {
+      case 'price':
+        processedValue = parseFloat(newValue);
+        if (isNaN(processedValue) || processedValue <= 0) {
+          bot.sendMessage(chatId, '❌ Введите корректную цену (число больше 0):');
+          return;
+        }
+        break;
+        
+      case 'sale_price':
+        if (newValue.toLowerCase() === 'удалить') {
+          processedValue = null;
+        } else {
+          processedValue = parseFloat(newValue);
+          if (isNaN(processedValue) || processedValue <= 0) {
+            bot.sendMessage(chatId, '❌ Введите корректную цену или "удалить":');
+            return;
+          }
+        }
+        break;
+        
+      case 'is_new':
+      case 'is_on_sale':
+      case 'in_stock':
+        processedValue = newValue === '✅ Да';
+        break;
+    }
+    
+    // Обновляем товар в базе данных
+    const { error } = await supabase
+      .from('products')
+      .update({ [editField]: processedValue })
+      .eq('id', product.id);
+    
+    if (error) throw error;
+    
+    userStates.delete(chatId);
+    bot.sendMessage(chatId, 
+      `✅ *Товар успешно обновлен!*\n\n` +
+      `📝 Товар: ${product.name}\n` +
+      `🔄 Поле: ${editField}\n` +
+      `✨ Новое значение: ${processedValue}`, 
+      { ...getMainMenu(), parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error('Error updating product:', error);
+    bot.sendMessage(chatId, 
+      `❌ Ошибка при обновлении товара: ${error.message}`
+    );
+  }
+}
+
+// Начать скрытие товара
+async function startHideProduct(chatId) {
+  userStates.set(chatId, {
+    action: 'hide_product'
+  });
+  
+  bot.sendMessage(chatId, 
+    '👁️ *Скрыть/показать товар*\n\n' +
+    '🆔 Введите ID товара или часть названия:', 
+    { parse_mode: 'Markdown' }
+  );
+}
+
+// Обработка скрытия товара
+async function handleHideProductState(chatId, text, userState) {
+  await findAndToggleProductVisibility(chatId, text);
+}
+
+// Найти и переключить видимость товара
+async function findAndToggleProductVisibility(chatId, searchTerm) {
+  try {
+    let query = supabase.from('products').select('*');
+    
+    if (searchTerm.length === 36 && searchTerm.includes('-')) {
+      query = query.eq('id', searchTerm);
+    } else {
+      query = query.ilike('name', `%${searchTerm}%`);
+    }
+    
+    const { data, error } = await query.limit(10);
+    
+    if (error) throw error;
+    
+    if (data.length === 0) {
+      bot.sendMessage(chatId, '❌ Товары не найдены.');
+      return;
+    }
+    
+    if (data.length === 1) {
+      const product = data[0];
+      const newStatus = !product.in_stock;
+      
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ in_stock: newStatus })
+        .eq('id', product.id);
+      
+      if (updateError) throw updateError;
+      
+      userStates.delete(chatId);
+      bot.sendMessage(chatId, 
+        `✅ *Статус товара изменен!*\n\n` +
+        `📝 Товар: ${product.name}\n` +
+        `👁️ Статус: ${newStatus ? 'Показан' : 'Скрыт'}`, 
+        { ...getMainMenu(), parse_mode: 'Markdown' }
+      );
+    } else {
+      let message = '📋 *Найденные товары:*\n\n';
+      data.forEach((product, index) => {
+        const status = product.in_stock ? '👁️ Показан' : '🙈 Скрыт';
+        message += `${index + 1}. ${product.name} - ${status}\n`;
+        message += `   ID: \`${product.id}\`\n\n`;
+      });
+      message += 'Введите точный ID товара:';
+      
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    }
+  } catch (error) {
+    console.error('Error toggling product visibility:', error);
+    bot.sendMessage(chatId, '❌ Ошибка при изменении статуса товара.');
+  }
+}
+
+// Показать список товаров
+async function showProductsList(chatId) {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, price, category, in_stock')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    
+    if (error) throw error;
+    
+    if (data.length === 0) {
+      bot.sendMessage(chatId, '📋 Товары не найдены.');
+      return;
+    }
+    
+    let message = '📋 *Список товаров (последние 20):*\n\n';
+    data.forEach((product, index) => {
+      const status = product.in_stock ? '✅' : '❌';
+      message += `${index + 1}. ${status} ${product.name}\n`;
+      message += `   💰 ${product.price} руб. | 📂 ${product.category}\n`;
+      message += `   🆔 \`${product.id}\`\n\n`;
+    });
+    
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error fetching products list:', error);
+    bot.sendMessage(chatId, '❌ Ошибка при получении списка товаров.');
+  }
+}
+
+// Показать статистику
+async function showStatistics(chatId) {
+  try {
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('*');
+    
+    const { data: orders, error: ordersError } = await supabase
+      .from('orders')
+      .select('*');
+    
+    if (productsError) throw productsError;
+    if (ordersError) throw ordersError;
+    
+    const totalProducts = products.length;
+    const visibleProducts = products.filter(p => p.in_stock).length;
+    const newProducts = products.filter(p => p.is_new).length;
+    const saleProducts = products.filter(p => p.is_on_sale).length;
+    
+    const totalOrders = orders.length;
+    const newOrders = orders.filter(o => o.status === 'new').length;
+    const completedOrders = orders.filter(o => o.status === 'delivered').length;
+    
+    const totalRevenue = orders
+      .filter(o => o.status === 'delivered')
+      .reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+    
+    const message = `
+📊 *Статистика магазина:*
+
+🛍️ *Товары:*
+• Всего товаров: ${totalProducts}
+• Видимых: ${visibleProducts}
+• Новинок: ${newProducts}
+• В распродаже: ${saleProducts}
+
+📦 *Заказы:*
+• Всего заказов: ${totalOrders}
+• Новых: ${newOrders}
+• Выполненных: ${completedOrders}
+
+💰 *Выручка:*
+• Общая выручка: ${totalRevenue.toFixed(2)} руб.
+• Средний чек: ${totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : 0} руб.
+    `;
+    
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    bot.sendMessage(chatId, '❌ Ошибка при получении статистики.');
+  }
+}
+
+// Обработка ошибок
+bot.on('polling_error', (error) => {
+  console.error('Polling error:', error);
+});
+
+console.log('🤖 Telegram Admin Bot запущен!');
