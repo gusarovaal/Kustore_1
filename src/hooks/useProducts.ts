@@ -1,99 +1,99 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types';
+import { FilterState } from '../components/FilterModal';
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProducts = async (filters?: {
-    category?: string;
-    search?: string;
-    isNew?: boolean;
-    isOnSale?: boolean;
-    minPrice?: number;
-    maxPrice?: number;
-  }) => {
+  const fetchProducts = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      let query = supabase
+      console.log('Fetching products from Supabase...');
+
+      const { data, error } = await supabase
         .from('products')
         .select('*')
         .eq('in_stock', true)
         .order('created_at', { ascending: false });
 
-      // Apply filters
-      if (filters?.category) {
-        query = query.eq('category', filters.category);
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
       }
 
-      if (filters?.search) {
-        query = query.or(`name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
-      }
-
-      if (filters?.isNew) {
-        query = query.eq('is_new', true);
-      }
-
-      if (filters?.isOnSale) {
-        query = query.eq('is_on_sale', true);
-      }
-
-      if (filters?.minPrice !== undefined) {
-        query = query.gte('price', filters.minPrice);
-      }
-
-      if (filters?.maxPrice !== undefined) {
-        query = query.lte('price', filters.maxPrice);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
+      console.log('Products fetched successfully:', data?.length || 0);
       setProducts(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       console.error('Error fetching products:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const getProductById = async (id: string): Promise<Product | null> => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('id', id)
-        .single();
+  const getNewProducts = useMemo(() => {
+    return () => products.filter(product => product.is_new);
+  }, [products]);
 
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      console.error('Error fetching product:', err);
-      return null;
-    }
-  };
+  const getSaleProducts = useMemo(() => {
+    return () => products.filter(product => product.is_on_sale);
+  }, [products]);
 
-  const getProductsByCategory = async (category: string) => {
-    return fetchProducts({ category });
-  };
+  const applyFilters = useMemo(() => {
+    return (productsToFilter: Product[], filters: FilterState) => {
+      return productsToFilter.filter(product => {
+        // Price range filter
+        const price = product.sale_price || product.price;
+        if (price < filters.priceRange[0] || price > filters.priceRange[1]) {
+          return false;
+        }
 
-  const searchProducts = async (searchTerm: string) => {
-    return fetchProducts({ search: searchTerm });
-  };
+        // Categories filter
+        if (filters.categories.length > 0 && !filters.categories.includes(product.category)) {
+          return false;
+        }
 
-  const getNewProducts = async () => {
-    return fetchProducts({ isNew: true });
-  };
+        // Sizes filter
+        if (filters.sizes.length > 0) {
+          const hasMatchingSize = filters.sizes.some(size => product.sizes.includes(size));
+          if (!hasMatchingSize) return false;
+        }
 
-  const getSaleProducts = async () => {
-    return fetchProducts({ isOnSale: true });
-  };
+        // Colors filter
+        if (filters.colors.length > 0 && product.color && !filters.colors.includes(product.color)) {
+          return false;
+        }
+
+        // Brands filter
+        if (filters.brands.length > 0 && product.brand && !filters.brands.includes(product.brand)) {
+          return false;
+        }
+
+        // New products filter
+        if (filters.isNew !== null && product.is_new !== filters.isNew) {
+          return false;
+        }
+
+        // Sale products filter
+        if (filters.isOnSale !== null && product.is_on_sale !== filters.isOnSale) {
+          return false;
+        }
+
+        // In stock filter
+        if (!filters.inStock && !product.in_stock) {
+          return false;
+        }
+
+        return true;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     fetchProducts();
@@ -103,12 +103,9 @@ export function useProducts() {
     products,
     loading,
     error,
-    fetchProducts,
-    getProductById,
-    getProductsByCategory,
-    searchProducts,
     getNewProducts,
     getSaleProducts,
-    refetch: () => fetchProducts()
+    applyFilters,
+    refetch: fetchProducts
   };
 }
