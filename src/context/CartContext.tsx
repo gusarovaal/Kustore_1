@@ -16,6 +16,7 @@ type CartAction =
 const CartContext = createContext<{
   state: CartState;
   dispatch: React.Dispatch<CartAction>;
+  addToCart: (item: any) => void;
 } | undefined>(undefined);
 
 function cartReducer(state: CartState, action: CartAction): CartState {
@@ -23,31 +24,14 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case 'ADD_ITEM': {
       const { product, size } = action.payload;
       
-      // Check stock availability
-      const stockQuantity = product.stock_quantity?.[size] || 0;
-      const currentCartQuantity = state.items.find(
-        item => item.product.id === product.id && item.size === size
-      )?.quantity || 0;
-      
-      if (currentCartQuantity >= stockQuantity) {
-        // Don't add if we've reached stock limit
-        return state;
-      }
-
       const existingItem = state.items.find(
         item => item.product.id === product.id && item.size === size
       );
 
       if (existingItem) {
-        const newQuantity = existingItem.quantity + 1;
-        if (newQuantity > stockQuantity) {
-          // Don't exceed stock quantity
-          return state;
-        }
-        
         const updatedItems = state.items.map(item =>
           item.product.id === product.id && item.size === size
-            ? { ...item, quantity: newQuantity }
+            ? { ...item, quantity: item.quantity + 1 }
             : item
         );
         const total = updatedItems.reduce((sum, item) => {
@@ -82,16 +66,9 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case 'UPDATE_QUANTITY': {
       const { productId, size, quantity } = action.payload;
       
-      // Find the product to check stock
-      const item = state.items.find(item => item.product.id === productId && item.size === size);
-      if (!item) return state;
-      
-      const stockQuantity = item.product.stock_quantity?.[size] || 0;
-      const finalQuantity = Math.min(quantity, stockQuantity);
-      
       const updatedItems = state.items.map(item =>
         item.product.id === productId && item.size === size
-          ? { ...item, quantity: finalQuantity }
+          ? { ...item, quantity }
           : item
       );
       const total = updatedItems.reduce((sum, item) => {
@@ -117,8 +94,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     itemCount: 0,
   });
 
+  const addToCart = (item: any) => {
+    dispatch({ 
+      type: 'ADD_ITEM', 
+      payload: { 
+        product: {
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          sale_price: null,
+          image_url: item.image,
+          category: 'general',
+          description: '',
+          sizes: [item.size],
+          in_stock: true,
+          is_new: false,
+          is_on_sale: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, 
+        size: item.size 
+      } 
+    });
+  };
+
   return (
-    <CartContext.Provider value={{ state, dispatch }}>
+    <CartContext.Provider value={{ state, dispatch, addToCart }}>
       {children}
     </CartContext.Provider>
   );

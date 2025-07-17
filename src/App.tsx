@@ -9,7 +9,6 @@ import { SalePage } from './pages/SalePage';
 import { AllProductsPage } from './pages/AllProductsPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { AdminDashboard } from './pages/AdminDashboard';
-import { ProtectedRoute } from './components/ProtectedRoute';
 import { TelegramWebAppInit } from './components/TelegramWebAppInit';
 
 function App() {
@@ -27,14 +26,7 @@ function App() {
                 <Route path="/sale" element={<SalePage />} />
                 <Route path="/all" element={<AllProductsPage />} />
                 <Route path="/admin/login" element={<AdminLoginPage />} />
-                <Route 
-                  path="/admin/dashboard" 
-                  element={
-                    <ProtectedRoute>
-                      <AdminDashboard />
-                    </ProtectedRoute>
-                  } 
-                />
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
               </Routes>
             </main>
           </div>
